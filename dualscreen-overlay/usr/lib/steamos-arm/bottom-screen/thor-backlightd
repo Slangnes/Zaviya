@@ -89,6 +89,18 @@ def rd(path: str, default: str = "") -> str:
         return default
 
 
+def read_steam_value(path: str = STEAM_FILE) -> int | None:
+    """Parse Steam's bind-mounted brightness file. Steam writes a C
+    NUL-terminated string (e.g. '25932\\0') and may overwrite without
+    truncating, so stop at the first NUL byte or newline."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            text = fh.read().split("\0", 1)[0].strip()
+            return int(text.splitlines()[0].strip() if text else 0)
+    except (OSError, ValueError):
+        return None
+
+
 def mounted(path: str) -> bool:
     for line in rd("/proc/self/mountinfo").splitlines():
         if line.split()[4:5] == [path]:
@@ -181,8 +193,9 @@ class Daemon:
         os.makedirs(RUN_DIR, exist_ok=True)
         # A restart finds its own mount still there: lift it to reach the
         # real file again.
-        if mounted(f"{BOTTOM}/brightness"):
-            subprocess.run(["umount", f"{BOTTOM}/brightness"], check=False)
+        while mounted(f"{BOTTOM}/brightness"):
+            if subprocess.run(["umount", "-l", f"{BOTTOM}/brightness"], check=False).returncode != 0:
+                break
         self.top = Panel(TOP)
         self.bottom = Panel(BOTTOM)
         # Steam sees the bottom panel's range; start from the top's level.
@@ -221,11 +234,7 @@ class Daemon:
         os.replace(tmp, STATE)
 
     def steam_value(self) -> int | None:
-        try:
-            with open(STEAM_FILE, encoding="utf-8") as fh:
-                return int(fh.read().strip() or 0)
-        except (OSError, ValueError):
-            return None
+        return read_steam_value(STEAM_FILE)
 
     def apply(self, force: bool = False, top: bool = True) -> None:
         """top=False on the periodic pass: gamescope also sets the top panel

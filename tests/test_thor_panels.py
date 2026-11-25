@@ -71,6 +71,26 @@ class BacklightDaemonPanels(unittest.TestCase):
             self.assertEqual(self.mod.dt_compatibles(str(p)), entries)
         self.assertEqual(self.mod.dt_compatibles("/nonexistent/compatible"), [])
 
+    def test_reads_steam_brightness_with_nul_or_stale_tail(self):
+        cases = [
+            (b"25932\x00", 25932),
+            (b"800\x002\x00", 800),
+            (b"65535\n", 65535),
+            (b"800\n5\n", 800),
+            (b"", 0),
+            (b"\x00", 0),
+            (b"bogus\x00", None),
+        ]
+        for raw, expected in cases:
+            with self.subTest(raw=raw):
+                f = tempfile.NamedTemporaryFile(delete=False)
+                f.write(raw)
+                f.close()
+                p = Path(f.name)
+                self.addCleanup(p.unlink)
+                self.assertEqual(self.mod.read_steam_value(str(p)), expected)
+        self.assertIsNone(self.mod.read_steam_value("/nonexistent/brightness"))
+
 
 class DashboardAndSession(unittest.TestCase):
     def test_dashboard_labels(self):
